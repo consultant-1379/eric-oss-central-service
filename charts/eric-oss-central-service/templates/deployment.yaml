@@ -1,0 +1,127 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ template "eric-oss-central-service.name" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "eric-oss-central-service.name" . }}
+    app.kubernetes.io/version: {{ include "eric-oss-central-service.version" . }}
+    app.kubernetes.io/instance: {{ .Release.Name | quote }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ template "eric-oss-central-service.chart" . }}
+  annotations:
+  {{- include "eric-oss-central-service.product-info" . | indent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "eric-oss-central-service.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  strategy:
+    type: {{ .Values.updateStrategy.type }}
+    {{- if and (eq .Values.updateStrategy.type "RollingUpdate") .Values.updateStrategy.rollingUpdate }}
+    rollingUpdate:
+{{ toYaml .Values.updateStrategy.rollingUpdate | indent 6 }}
+{{- if .Values.updateStrategy.rollingUpdate.maxUnavailable }}
+      maxUnavailable: {{ .Values.updateStrategy.rollingUpdate.maxUnavailable }}
+{{- end }}
+{{- if .Values.updateStrategy.rollingUpdate.maxSurge }}
+      maxSurge: {{ .Values.updateStrategy.rollingUpdate.maxSurge }}
+{{- end }}
+    {{- end }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "eric-oss-central-service.name" . }}
+        app.kubernetes.io/version: {{ include "eric-oss-central-service.version" . }}
+        app.kubernetes.io/instance: {{ .Release.Name | quote }}
+        app.kubernetes.io/managed-by: {{ .Release.Service }}
+        chart: {{ template "eric-oss-central-service.chart" . }}
+      annotations:
+        checksum/configMetrics: {{ include (print $.Template.BasePath "/configmap-metrics.yaml") . | sha256sum }}
+{{- include "eric-oss-central-service.product-info" . | indent 8 }}
+        # These are mandatory annotations required by prometheus, they tell it which port to scrape the metrics on.
+        prometheus.io/path: {{ .Values.jmxExporter.path | quote }}
+        prometheus.io/port: {{ .Values.jmxExporter.servicePort | quote }}
+        prometheus.io/scrape: {{ .Values.jmxExporter.scrape | quote }}
+    spec:
+      {{- if include "eric-oss-central-service.pullSecrets" . }}
+      imagePullSecrets:
+      - name: {{ template "eric-oss-central-service.pullSecrets" . }}
+      {{- end }}
+      restartPolicy: {{ .Values.restartPolicy }}
+      containers:
+        - name: eric-oss-central-service
+          image: {{ template "eric-oss-central-service.registryUrl" . }}/{{ index .Values "imageCredentials" "eric-oss-central-service" "repoPath" }}/{{ index .Values "images" "eric-oss-central-service" "name" }}:{{ index .Values "images" "eric-oss-central-service" "tag" }}
+          imagePullPolicy: {{ required "A valid .Values.global.registry.imagePullPolicy entry is required!" .Values.global.registry.imagePullPolicy }}
+          resources:
+            requests:
+              cpu: {{ index .Values "resources" "eric-oss-central-service" "requests" "cpu" | quote }}
+              memory: {{ index .Values "resources" "eric-oss-central-service" "requests" "memory" | quote }}
+            limits:
+              cpu: {{ index .Values "resources" "eric-oss-central-service" "limits" "cpu" | quote }}
+              memory: {{ index .Values "resources" "eric-oss-central-service" "limits" "memory" | quote }}
+          env:
+          - name: JAVA_OPTS
+            value: {{ index .Values "images" "eric-oss-central-service" "javaOpts" | quote }}
+          - name: PROMETHEUS_PUSHGATEWAY_HOSTNAME
+            value: {{ index  .Values "prometheus-pushgateway" "fullnameOverride" | quote  }}
+          - name: PROMETHEUS_PUSHGATEWAY_PORT
+            value: {{ index  .Values "prometheus-pushgateway" "port" | quote  }}
+          - name: WILDFLY_LOG_LEVEL
+            value: {{ index .Values "images" "eric-oss-central-service" "wildflyLogLevel" | quote }}
+          ports:
+            - name: wildfly
+              containerPort: {{ index .Values "service" "port" }}
+              protocol: TCP
+          livenessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "getReply=$(curl -s -o /dev/null -w %{http_code} http://127.0.0.1:8080/son-om/algorithms/flm/v1/docs); if [ \"$getReply\" -lt 200 -o \"$getReply\" -ge 400 ]; then exit 1; fi; ./ericsson/3pp/monitor_wildfly.sh"]
+            initialDelaySeconds: {{ index .Values "images" "eric-oss-central-service" "initialDelaySeconds" }}
+            timeoutSeconds: {{ index .Values "images" "eric-oss-central-service" "timeoutSeconds" }}
+            periodSeconds: {{ index .Values "images" "eric-oss-central-service" "periodSeconds" }}
+            failureThreshold: {{ index .Values "images" "eric-oss-central-service" "failureThreshold" }}
+          readinessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "getReply=$(curl -s -o /dev/null -w %{http_code} http://127.0.0.1:8080/son-om/algorithms/flm/v1/docs); if [ \"$getReply\" -lt 200 -o \"$getReply\" -ge 400 ]; then exit 1; fi; ./ericsson/3pp/monitor_wildfly.sh"]
+            initialDelaySeconds: {{ index .Values "images" "eric-oss-central-service" "initialDelaySeconds" }}
+            periodSeconds: {{ index .Values "images" "eric-oss-central-service" "periodSeconds" }}
+            failureThreshold: {{ index .Values "images" "eric-oss-central-service" "failureThreshold" }}
+        {{- if .Values.jmx.enabled }}
+        - name: jmx-exporter
+          image: {{ .Values.global.registry.url }}/{{ index .Values "imageCredentials" "jmx-exporter" "repoPath" }}/{{ index .Values "images" "jmx-exporter" "name" }}:{{ index .Values "images" "jmx-exporter" "tag" }}
+          env:
+          - name: SERVICE_PORT
+            value: {{ .Values.jmxExporter.servicePort | quote }}
+          - name: DEST_PORT
+            value: {{ .Values.jmxExporter.destPort | quote }}
+          - name: RULES_MODULE
+            value: {{ .Values.jmxExporter.rules | quote }}
+          - name: DEST_HOST
+            valueFrom:
+              fieldRef:
+                fieldPath: status.podIP
+          ports:
+            - containerPort: {{ .Values.jmxExporter.servicePort }}
+              name: metrics
+          livenessProbe:
+            tcpSocket:
+              port: {{ .Values.jmxExporter.servicePort }}
+            initialDelaySeconds: {{ index .Values "jmxExporter" "initialDelaySeconds" }}
+            timeoutSeconds: {{ index .Values "jmxExporter" "timeoutSeconds" }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ .Values.jmxExporter.servicePort }}
+            initialDelaySeconds: {{ index .Values "jmxExporter" "initialDelaySeconds" }}
+            timeoutSeconds: {{ index .Values "jmxExporter" "timeoutSeconds" }}
+          resources:
+            {{- toYaml .Values.resources.jmxExporter | nindent 12 }}
+          volumeMounts:
+            - name: {{ template "eric-oss-central-service.name" . }}-metrics
+              mountPath: {{ .Values.jmxExporter.rulesDirectory }}
+          {{- end }}
+      volumes:
+        - name: {{ template "eric-oss-central-service.name" . }}-metrics
+          configMap:
+            name: {{ template "eric-oss-central-service.name" . }}-metrics-config
+            defaultMode: 0777
+

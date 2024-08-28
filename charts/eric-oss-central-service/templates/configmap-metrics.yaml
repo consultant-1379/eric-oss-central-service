@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ template "eric-oss-central-service.name" . }}-metrics-config
+  labels:
+    app.kubernetes.io/name: {{ include "eric-oss-central-service.name" . }}
+    app.kubernetes.io/version: {{ include "eric-oss-central-service.version" . }}
+    app.kubernetes.io/instance: {{ .Release.Name | quote }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ template "eric-oss-central-service.chart" . }}
+  annotations:
+  {{- include "eric-oss-central-service.product-info" . | indent 4 }}
+data:
+  eric-oss-central-service-rules.yml: |-
+{{ .Files.Get .Values.metrics.rules | indent 4 }}

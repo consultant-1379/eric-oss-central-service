@@ -1,0 +1,29 @@
+{
+  "source": "FLM",
+  "counterAttributes": [
+    {
+      "name": "pmHoExeSuccLteInterF",
+      "counter_source": "SON",
+      "node_type": [
+        "ERBS",
+        "RadioNode"
+      ],
+      "data_type": "PM_STATISTICAL",
+      "element": "relation",
+      "is_normalized": "false",
+      "is_array": "false"
+    },
+    {
+      "name": "pmHoExeSuccLteIntraF",
+      "counter_source": "SON",
+      "node_type": [
+        "ERBS",
+        "RadioNode"
+      ],
+      "data_type": "PM_STATISTICAL",
+      "element": "relation",
+      "is_normalized": "false",
+      "is_array": "false"
+    }
+  ]
+}

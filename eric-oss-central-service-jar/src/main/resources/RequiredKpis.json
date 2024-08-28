@@ -1,0 +1,50 @@
+{
+  "source": "FLM",
+  "kpi_definitions": [
+     {
+      "name": "intra_site",
+      "alias": "relation_guid_source_guid_target_guid",
+      "expression": "cm://relation.intraSite FROM relation",
+      "object_type": "BOOLEAN",
+      "calculation_frequency": "0 0 0/1 * * ? *",
+      "aggregation_type": "FIRST",
+      "aggregation_period": 1440,
+      "aggregation_elements": [
+        "relation.id as guid",
+        "relation.source_cell_id as source_guid",
+        "relation.target_cell_id as target_guid"
+      ],
+      "is_visible": false
+    },
+    {
+      "name": "out_succ_ho_intraf",
+      "alias": "relation_guid_source_guid_target_guid",
+      "expression": "pm_stats://counters_relation.pmHoExeSuccLteIntraF FROM counters_relation",
+      "object_type": "INTEGER",
+      "calculation_frequency": "0 0/15 * * * ? *",
+      "aggregation_type": "SUM",
+      "aggregation_period": 1440,
+      "aggregation_elements": [
+        "counters_relation.guid",
+        "counters_relation.source_guid",
+        "counters_relation.target_guid"
+      ],
+      "is_visible": "false"
+    },
+    {
+      "name": "out_succ_ho_interf",
+      "alias": "relation_guid_source_guid_target_guid",
+      "expression": "pm_stats://counters_relation.pmHoExeSuccLteInterF FROM counters_relation",
+      "object_type": "INTEGER",
+      "calculation_frequency": "0 0/15 * * * ? *",
+      "aggregation_type": "SUM",
+      "aggregation_period": 1440,
+      "aggregation_elements": [
+        "counters_relation.guid",
+        "counters_relation.source_guid",
+        "counters_relation.target_guid"
+      ],
+      "is_visible": "false"
+    }
+  ]
+}

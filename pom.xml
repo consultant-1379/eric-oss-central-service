@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.ericsson.oss.ci</groupId>
+    <artifactId>eric-oss-central-service</artifactId>
+    <version>1.0.7-SNAPSHOT</version>
+
+    <packaging>pom</packaging>
+    <name>[${project.artifactId}] POM</name>
+
+    <parent>
+        <groupId>com.ericsson.oss.services.sonom</groupId>
+        <artifactId>son-parent</artifactId>
+        <version>1.0.115</version>
+    </parent>
+
+    <modules>
+        <module>eric-oss-central-service-ear</module>
+        <module>eric-oss-central-service-ejb</module>
+        <module>eric-oss-central-service-jar</module>
+        <module>eric-oss-central-service-rest-api-jar</module>
+        <module>eric-oss-central-service-war</module>
+    </modules>
+
+    <scm>
+        <developerConnection>${ericsson.scm.url}</developerConnection>
+        <connection>${ericsson.scm.url}</connection>
+        <tag>HEAD</tag>
+    </scm>
+
+    <properties>
+        <ericsson.scm.url>
+            scm:git:[fetch=]ssh://gerritmirror.sero.gic.ericsson.se:29418/OSS/com.ericsson.oss.ci/eric-oss-central-service[push=]ssh://gerrit.sero.gic.ericsson.se:29418/OSS/com.ericsson.oss.ci/eric-oss-central-service
+        </ericsson.scm.url>
+
+        <!-- 3PP Versions -->
+        <!-- ESW2 means it is fine to use -->
+        <!-- ESW3 means it needs to be checked with the CNA, this state could be because the 3PP is no longer maintained, or because there are too many licenses -->
+        <!-- ESW4 means not permitted for new design, and cannot be added -->
+        <version.slf4j>1.7.25</version.slf4j> <!-- ESW2: https://bazaar.internal.ericsson.com/b-view-component.php?componentid=29703 -->
+        <version.jaxrs-api>3.0.6.Final</version.jaxrs-api> <!-- ESW2: https://bazaar.internal.ericsson.com/b-view-component.php?componentid=16826 -->
+        <version.javaee-web-api>6.0</version.javaee-web-api> <!-- Not found in Bazaar -->
+
+        <!-- Test Dependency Versions -->
+        <version.junit>4.12</version.junit>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Dependencies -->
+            <dependency>
+                <groupId>com.ericsson.oss.ci</groupId>
+                <artifactId>eric-oss-central-service-jar</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- 3PP Dependencies -->
+            <dependency>
+                <groupId>javax</groupId>
+                <artifactId>javaee-api</artifactId>
+                <version>${version.javaee-web-api}</version>
+                <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <groupId>javax</groupId>
+                <artifactId>javaee-web-api</artifactId>
+                <version>${version.javaee-web-api}</version>
+                <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.jboss.resteasy</groupId>
+                <artifactId>jaxrs-api</artifactId>
+                <version>${version.jaxrs-api}</version>
+                <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-api</artifactId>
+                <version>${version.slf4j}</version>
+            </dependency>
+
+            <!-- Test Dependencies -->
+            <dependency>
+                <groupId>junit</groupId>
+                <artifactId>junit</artifactId>
+                <version>${version.junit}</version>
+                <scope>test</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+</project>

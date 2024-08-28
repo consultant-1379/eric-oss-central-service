@@ -1,0 +1,26 @@
+{{- if .Values.ingress.enabled -}}
+  {{- $serviceName := include "eric-oss-central-service.name" . }}
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: {{ template "eric-oss-central-service.name" . }}-ingress
+  labels:
+    app.kubernetes.io/name: {{ include "eric-oss-central-service.name" . }}
+    app.kubernetes.io/version: {{ include "eric-oss-central-service.version" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ template "eric-oss-central-service.chart" . }}
+  annotations:
+    {{- include "eric-oss-central-service.product-info" . | indent 8 }}
+spec:
+  rules:
+  {{- range .Values.ingress.hostname }}
+    - host: {{ . | quote }}
+      http:
+        paths:
+          - path: /son-om/algorithms/flm/v1
+            backend:
+              serviceName: {{ $serviceName }}
+              servicePort: 8080
+  {{- end }}
+{{- end }}

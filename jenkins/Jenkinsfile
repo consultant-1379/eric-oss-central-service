@@ -1,0 +1,261 @@
+@Library('eric-oss-central-utils-shared-library')
+import jenkins.utils.*
+utils = new utils()     // https://gerrit.sero.gic.ericsson.se/gitweb?p=OSS/com.ericsson.oss.ci/eric-oss-central-utils.git;a=blob_plain;f=src/jenkins/utils/utils.groovy;hb=master
+
+//pipeline
+pipeline {
+    agent {
+        node {
+            label DOCKER_AGENT
+        }
+    }
+    tools {
+        jdk 'jdk8'
+        maven 'maven'
+    }
+    options {
+        skipDefaultCheckout true
+        timestamps()
+        timeout(time: 1, unit: 'HOURS')
+        buildDiscarder(logRotator(numToKeepStr: '40', artifactNumToKeepStr: '20'))
+    }
+    environment {
+        SERVICE_NAME = "eric-oss-central-service"
+        CREDENTIALS_ARM_LI = credentials("${CREDENTIALS_ID_ARM_LI}")
+        BOB = "docker run --rm \
+            --env APP_PATH=${WORKSPACE} \
+            --env ADP_HELM_DR_CHECK_SKIPPED_RULES=${ADP_HELM_DR_CHECK_SKIPPED_RULES} \
+            --env ADP_HELM_DR_CHECK_TAG=${ADP_HELM_DR_CHECK_TAG} \
+            --env ADP_RELEASE_AUTO_TAG=${ADP_RELEASE_AUTO_TAG} \
+            --env DOC_BUILDER_TAG=${DOC_BUILDER_TAG} \
+            --env RAML_BUILDER_TAG=${RAML_BUILDER_TAG} \
+            -v ${WORKSPACE}:${WORKSPACE} \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -w ${WORKSPACE} \
+            ${BOB_DOCKER_IMAGE}"
+        KUBECTL_CMD = "docker run --rm \
+            -v ${WORKSPACE}/.kube/config:/root/.kube/config \
+            -v ${WORKSPACE}:${WORKSPACE} \
+            ${KUBECTL_DOCKER_IMAGE}"
+        HELM_CMD = "docker run --rm \
+            -v ${WORKSPACE}/.kube/config:/root/.kube/config \
+            -v ${WORKSPACE}/helm-home:/root/.helm \
+            -v ${WORKSPACE}:${WORKSPACE} \
+            ${HELM_DOCKER_IMAGE}"
+        HELM_SET = "imageCredentials.registry.pullSecret=${SERVICE_NAME}-secret"
+        HELM_CHART_REPO = "https://arm.epk.ericsson.se/artifactory/proj-eric-oss-central-drop-helm"
+        HELM_CHART_PACKAGED = "${WORKSPACE}/.bob/${SERVICE_NAME}-internal/*.tgz"
+        HELM_INSTALL_RELEASE_NAME = "${SERVICE_NAME}-install"
+        HELM_INSTALL_NAMESPACE = "${HELM_INSTALL_RELEASE_NAME}"
+        HELM_INSTALL_TIMEOUT = 900
+    }
+    stages {
+        stage('Clean') {
+            steps {
+                sh '''
+                    echo "Cleanup workspace"
+                    sudo chmod -fR 777 "${WORKSPACE}"
+                    sudo rm -Rf ./*
+                '''
+
+                echo 'SCM Checkout'
+                checkout scm
+            }
+        }
+        stage('Init') {
+            steps {
+                script {
+                    utils.injectFiles()
+
+                    echo 'Prepare Helm'
+                    sh '${HELM_CMD} init --client-only'
+                    sh '${HELM_CMD} repo add ${SERVICE_NAME}-repo ${HELM_CHART_REPO} --username ${CREDENTIALS_ARM_LI_USR} --password ${CREDENTIALS_ARM_LI_PSW}'
+                    sh '${HELM_CMD} repo update'
+
+                    if (env.K8S == "true") {
+                        utils.cleanupHelmReleases(HELM_INSTALL_RELEASE_NAME)
+                    }
+                }
+            }
+        }
+        stage('Dependency Updates') {
+            when {
+                expression { env.TRIGGERED_BY_STAGING == "true" }
+            }
+            steps {
+                script {
+                    utils.updateDependencyWhenTriggeredByStaging()
+                }
+            }
+        }
+        stage('Build') {
+            when {
+                expression { env.BUILD == "true" }
+            }
+            steps {
+                script {
+                    utils.mavenInstallWithStaticAnalysis()
+                }
+            }
+        }
+        stage('Release') {
+            when {
+                expression { env.MVN_RELEASE == "true" }
+            }
+            steps {
+                script {
+                    utils.mavenReleaseWithStaticAnalysis()
+                    utils.checkOutRelease()
+                }
+            }
+        }
+        stage('Image') {
+            steps {
+                script {
+                    if (env.RELEASE == "true" || env.K8S == "true") {
+                        sh "${BOB} init-drop > bob-init.log"
+                    } else {
+                        sh "${BOB} init-review > bob-init.log"
+                    }
+                }
+                sh "sudo chmod -fR 777 .bob/"
+                sh 'echo "${CREDENTIALS_ARM_LI_PSW}" > .bob/var.HELM_REPO_API_TOKEN'
+                sh "${BOB} image > bob-image.log"
+            }
+        }
+        stage('Package') {
+            steps {
+                script {
+                    if (env.RELEASE == "true" || env.K8S == "true") {
+                        sh "${BOB} package > bob-package.log"
+                    } else {
+                        sh "${BOB} package-local:package-helm-internal > bob-package.log"
+                    }
+                }
+            }
+        }
+        stage('Lint') {
+            steps {
+                echo 'Lint and Helm Design Rules Check:'
+                sh "${BOB} lint > bob-lint.log"
+                echo 'Helm template:'
+                sh '${HELM_CMD} template ${HELM_CHART_PACKAGED} --set ${HELM_SET} > helm-template.log'
+                echo 'Helm Dry Run Install:'
+                sh '${HELM_CMD} install ${HELM_CHART_PACKAGED} --set ${HELM_SET} --debug --dry-run > helm-install-dry-run.log'
+            }
+        }
+        stage('Generate') {
+            steps {
+                echo 'Generate RAML documentation:'
+                sh "${BOB} generate-docs > bob-generate-docs.log"
+                archiveArtifacts 'build/doc/**/*.*'
+            }
+        }
+        stage('K8S Install') {
+            when {
+                expression { env.K8S == "true" }
+            }
+            steps {
+                echo 'Initial install of the service helm chart:'
+                sh "${KUBECTL_CMD} create ns ${HELM_INSTALL_NAMESPACE} || true"
+                sh "${KUBECTL_CMD} create secret docker-registry ${SERVICE_NAME}-secret \
+                    --docker-server=armdocker.rnd.ericsson.se \
+                    --docker-username=${CREDENTIALS_ARM_LI_USR} \
+                    --docker-password=${CREDENTIALS_ARM_LI_PSW} \
+                    -n ${HELM_INSTALL_NAMESPACE} || true"
+
+                sh '${HELM_CMD} upgrade \
+                    --install ${HELM_INSTALL_RELEASE_NAME} ${HELM_CHART_PACKAGED} \
+                    --set ${HELM_SET} \
+                    --namespace ${HELM_INSTALL_NAMESPACE} \
+                    --timeout ${HELM_INSTALL_TIMEOUT} \
+                    --devel \
+                    --wait'
+            }
+        }
+        stage('K8S Downgrade') {
+            when {
+                expression { env.K8S == "true" }
+            }
+            steps {
+                echo 'Downgrade to Known Good Baseline (KGB) of the service:'
+                sh '${HELM_CMD} upgrade \
+                    --install ${HELM_INSTALL_RELEASE_NAME} ${SERVICE_NAME}-repo/${SERVICE_NAME} \
+                    --set ${HELM_SET} \
+                    --namespace ${HELM_INSTALL_NAMESPACE} \
+                    --timeout ${HELM_INSTALL_TIMEOUT} \
+                    --devel \
+                    --wait'
+            }
+        }
+        stage('K8S Upgrade') {
+            when {
+                expression { env.K8S == "true" }
+            }
+            steps {
+                echo 'Upgrade from the KGB of the service to the latest service helm chart:'
+                sh '${HELM_CMD} upgrade \
+                    --install ${HELM_INSTALL_RELEASE_NAME} ${HELM_CHART_PACKAGED} \
+                    --set ${HELM_SET} \
+                    --namespace ${HELM_INSTALL_NAMESPACE} \
+                    --timeout ${HELM_INSTALL_TIMEOUT} \
+                    --devel \
+                    --wait'
+            }
+        }
+        stage('K8S Test') {
+            when {
+                expression { env.K8S == "true" }
+            }
+            steps {
+                echo 'Run the basic helm test:'
+                sh '${HELM_CMD} test ${HELM_INSTALL_RELEASE_NAME} --timeout 300 --cleanup'
+            }
+        }
+        stage('Publish') {
+            when {
+                expression { env.RELEASE == "true" }
+            }
+            steps {
+                sh "${BOB} publish > bob-publish.log"
+                archiveArtifacts 'artifact.properties'
+                script {
+                    utils.tag_release()
+                }
+            }
+        }
+        stage('Dependency Updates Commit') {
+            when {
+                expression { env.TRIGGERED_BY_STAGING == "true" }
+            }
+            steps {
+                script {
+                    utils.commitChangesWhenTriggeredByStaging()
+                }
+            }
+        }
+    }
+    post {
+        always {
+            script {
+                utils.postAlways()
+                utils.staticAnalysisReports()
+
+                if (env.K8S == "true") {
+                    utils.get_logs_for_each_namespace(HELM_INSTALL_NAMESPACE)
+                    utils.cleanupHelmReleases(HELM_INSTALL_RELEASE_NAME)
+                }
+            }
+        }
+        success {
+            script {
+                utils.modifyBuildDescription("OSS/com.ericsson.oss.ci/eric-oss-central-service", "eric-oss-central-service")
+            }
+        }
+        failure {
+            script {
+                utils.postFailure()
+            }
+        }
+    }
+}

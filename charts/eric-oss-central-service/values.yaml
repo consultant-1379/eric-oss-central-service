@@ -1,0 +1,109 @@
+# Default values for eric-oss-central-service.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.  
+
+# As default registry path, the global registry path will be used.
+global:
+  registry:
+    url: armdocker.rnd.ericsson.se
+    imagePullPolicy: IfNotPresent
+  timezone: UTC
+
+productInfo:
+  # R-State of the product. R State should match helm chart version (3.1.0 -> R2A)
+  # To automate it when packaging the helm chart rstate can be generated
+  # and below value replaced with correct R-State
+  rstate: RSTATE
+
+imageCredentials:
+  eric-oss-central-service:
+    registry:
+      url: # overrides global registry url
+    # Bob will populate the repoPath when packaging the chart
+    repoPath: REPO_PATH
+    flm-api-test-repo: armdocker.rnd.ericsson.se/proj-eson-3pp
+  jmx-exporter:
+    registry:
+      url: # overrides global registry url
+    repoPath: aia_releases
+
+images:
+  eric-oss-central-service:
+    name: eric-oss-central-service
+    # Bob will populate the tag when packaging the chart
+    tag: VERSION
+    wildflyLogLevel: INFO
+    javaOpts: -Xms512m -Xmx4g -Djava.net.preferIPv4Stack=true
+    initialDelaySeconds: 90
+    timeoutSeconds: 5
+    periodSeconds: 30
+    failureThreshold: 5
+  flm-api-test:
+    name: ecson-jdk8-base
+    tag: "1.0.19"
+  jmx-exporter:
+    name: prometheus-jmx-exporter-0.3.1
+    tag: 1.2.0-3
+
+
+replicaCount: 1
+restartPolicy: Always
+
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 0
+    maxSurge: 1
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: true
+  hostname:
+    - hostname.domain-name.com
+  tls:
+    passthrough: false
+
+jmx:
+  enabled: true
+metrics:
+  rules: metrics/rules.yml
+
+jmxExporter:
+  destPort: 10002
+  servicePort: 21002
+  rules: "eric-oss-central-service-rules"
+  rulesDirectory: /opt/jmx_exporter/rules
+  path: /metrics
+  scrape: true
+  initialDelaySeconds: 90
+  timeoutSeconds: 5
+  resources:
+    limits:
+      cpu: 300m
+      memory: 500Mi
+    requests:
+      cpu: 200m
+      memory: 256Mi
+
+prometheus-pushgateway:
+  fullnameOverride: eric-prometheus-pushgateway
+  port: 9091
+
+resources:
+  jmxExporter:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 300m
+      memory: 500Mi
+  eric-oss-central-service:
+    requests:
+      cpu: 1
+      memory: 1Gi
+    limits:
+      cpu: 2
+      memory: 2Gi

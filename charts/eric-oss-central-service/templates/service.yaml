@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "eric-oss-central-service.name" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "eric-oss-central-service.name" . }}
+    app.kubernetes.io/version: {{ include "eric-oss-central-service.version" . }}
+    app.kubernetes.io/instance: {{ .Release.Name | quote }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ template "eric-oss-central-service.chart" . }}
+  annotations:
+  {{- include "eric-oss-central-service.product-info" . | indent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: {{ template "eric-oss-central-service.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name | quote }}
